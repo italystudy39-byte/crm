@@ -13,12 +13,15 @@ export type RunArgs = {
 
 const MAX_STEPS = 6;
 
-/** Which AI provider is configured. Gemini wins when both keys are set. */
+/** Which AI provider is configured. Claude wins when both keys are set. */
 export function activeProvider(): "gemini" | "claude" | null {
-  if (process.env.GEMINI_API_KEY) return "gemini";
   if (process.env.ANTHROPIC_API_KEY) return "claude";
+  if (process.env.GEMINI_API_KEY) return "gemini";
   return null;
 }
+
+// Haiku 5.5 is the low-cost default; set ANTHROPIC_MODEL=claude-opus-5-5 for the strongest model.
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
 
 async function execTool(name: string, input: unknown, ctx: AgentCtx, send: Send) {
   send({ type: "tool", name, label: TOOL_LABELS[name] ?? name });
@@ -138,14 +141,14 @@ export async function runClaude({ system, messages, ctx, send, signal }: RunArgs
   for (let step = 0; step < MAX_STEPS; step++) {
     const s = client.beta.messages.stream(
       {
-        model: "claude-opus-5-5",
+        model: CLAUDE_MODEL,
         max_tokens: 8000,
         system,
         messages: history,
         tools: TOOLS,
         output_config: { effort: "low" },
-        fallbacks: "default",
-        betas: ["server-side-fallback-2026-07-01"],
+        // Server-side fallback is not available on Haiku; use it on the larger models.
+        ...(CLAUDE_MODEL.startsWith("claude-haiku") ? {} : { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] }),
       },
       { signal },
     );
