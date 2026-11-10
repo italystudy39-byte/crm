@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { ApiError, GoogleGenAI, type Content, type Part } from "@google/genai";
+import { ApiError, GoogleGenAI, ThinkingLevel, type Content, type Part } from "@google/genai";
 import { TOOLS, TOOL_LABELS, runTool, type AgentCtx } from "./tools";
 
 export type Send = (o: unknown) => void;
@@ -37,8 +37,12 @@ const GEMINI_MODELS = [
 ].filter((m, i, a): m is string => !!m && a.indexOf(m) === i);
 
 // Overloaded / rate-limited / unknown model: try the next model in the chain.
+class FirstTokenTimeout extends Error {
+  name = "FirstTokenTimeout";
+}
 const retryable = (e: unknown) =>
-  e instanceof ApiError && [404, 429, 500, 503].includes(e.status);
+  (e instanceof ApiError && [404, 429, 500, 503].includes(e.status)) || e instanceof FirstTokenTimeout;
+const FIRST_TOKEN_MS = 20_000;
 
 export async function runGemini({ system, messages, ctx, send, signal }: RunArgs) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { retryOptions: { attempts: 1 } } });
@@ -52,6 +56,14 @@ export async function runGemini({ system, messages, ctx, send, signal }: RunArgs
     for (;;) {
       const model = GEMINI_MODELS[modelIdx];
       let streamed = false;
+      const t0 = Date.now();
+      // Abort if the model has not started answering in time (overloaded free tier can hang).
+      const ac = new AbortController();
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        ac.abort();
+      }, FIRST_TOKEN_MS);
       try {
         const stream = await ai.models.generateContentStream({
           model,
@@ -59,11 +71,13 @@ export async function runGemini({ system, messages, ctx, send, signal }: RunArgs
           config: {
             systemInstruction: system,
             tools: [{ functionDeclarations }],
-            abortSignal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+            ...(model.startsWith("gemini-2") ? {} : { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }),
+            abortSignal: AbortSignal.any([signal, ac.signal]),
           },
         });
         // Keep every part the model returned (incl. thought signatures) to send back as history.
         for await (const chunk of stream) {
+          clearTimeout(timer);
           const cand = chunk.candidates?.[0];
           if (cand?.finishReason) finish = cand.finishReason;
           for (const p of cand?.content?.parts ?? []) {
@@ -74,10 +88,14 @@ export async function runGemini({ system, messages, ctx, send, signal }: RunArgs
             }
           }
         }
+        clearTimeout(timer);
+        console.info("gemini ok", model, `${Date.now() - t0}ms`);
         break;
-      } catch (e) {
+      } catch (err) {
+        clearTimeout(timer);
+        const e = timedOut && !signal.aborted ? new FirstTokenTimeout(`no answer from ${model} in ${FIRST_TOKEN_MS}ms`) : err;
+        console.warn("gemini attempt failed", model, `${Date.now() - t0}ms`, e instanceof ApiError ? `${e.status} ${e.message.slice(0, 300)}` : (e as Error).message);
         if (signal.aborted || streamed || !retryable(e) || modelIdx >= GEMINI_MODELS.length - 1) throw e;
-        console.warn("gemini model failed, trying next", model, e instanceof ApiError ? e.status : (e as Error).name);
         modelIdx++;
         modelParts.length = 0;
         finish = undefined;
@@ -109,7 +127,7 @@ export function geminiErrorMessage(e: unknown) {
     if (e.status === 400 || e.status === 401 || e.status === 403) return "Проблема с ключом GEMINI_API_KEY или моделью.";
     return "AI-сервис временно недоступен, попробуйте ещё раз.";
   }
-  if (e instanceof Error && e.name === "TimeoutError") return "Gemini долго не отвечает, попробуйте ещё раз.";
+  if (e instanceof FirstTokenTimeout) return "Gemini сейчас не отвечает (бесплатный тариф перегружен), попробуйте через минуту.";
   return null;
 }
 
