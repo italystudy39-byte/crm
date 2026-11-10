@@ -42,14 +42,14 @@ export function CommandSearch({ slug }: { slug: string }) {
 
   return (
     <>
-      <button onClick={() => setOpen(true)} className="flex w-full max-w-xs items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-500 hover:border-slate-400">
+      <button onClick={() => setOpen(true)} className="flex w-full max-w-xs items-center gap-2 rounded-lg border border-slate-300 bg-surface px-3 py-1.5 text-sm text-slate-500 hover:border-slate-400">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
         <span className="flex-1 text-left">Поиск</span>
         <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1.5 text-xs sm:inline">{isMac ? "⌘" : "Ctrl"} K</kbd>
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-[12vh]" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]" onClick={() => setOpen(false)}>
+          <div className="w-full max-w-xl overflow-hidden rounded-xl bg-surface shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <input
               ref={input}
               value={q}

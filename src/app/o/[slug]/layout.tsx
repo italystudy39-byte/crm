@@ -29,7 +29,7 @@ export default async function OrgLayout({ children, params }: LayoutProps<"/o/[s
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <aside className="border-b border-slate-200 bg-white p-3 md:w-56 md:border-b-0 md:border-r">
+      <aside className="border-b border-slate-200 bg-surface p-3 md:w-56 md:border-b-0 md:border-r">
         <div className="mb-3 px-2">
           <div className="truncate font-semibold">{org.name}</div>
           <div className="truncate text-xs text-slate-500">{email}</div>

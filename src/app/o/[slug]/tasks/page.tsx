@@ -14,7 +14,7 @@ export default async function TasksPage({ params, searchParams }: PageProps<"/o/
   const { data: tasks } = await q;
   const path = `/o/${slug}/tasks`;
   const tab = (label: string, href: string, active: boolean) => (
-    <Link href={href} className={`rounded-full px-3 py-1 text-sm ${active ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-600"}`}>{label}</Link>
+    <Link href={href} className={`rounded-full px-3 py-1 text-sm ${active ? "bg-indigo-600 text-white" : "border border-slate-200 bg-surface text-slate-600"}`}>{label}</Link>
   );
 
   return (

@@ -29,7 +29,7 @@ export default async function DealsPage({ params, searchParams }: PageProps<"/o/
         <h1 className="text-2xl font-semibold">Сделки</h1>
         <div className="flex gap-1">
           {(pipelines ?? []).map((p) => (
-            <Link key={p.id} href={`/o/${slug}/deals?p=${p.id}`} className={`rounded-full px-3 py-1 text-sm ${p.id === pipelineId ? "bg-indigo-600 text-white" : "bg-white text-slate-600 border border-slate-200"}`}>{p.name}</Link>
+            <Link key={p.id} href={`/o/${slug}/deals?p=${p.id}`} className={`rounded-full px-3 py-1 text-sm ${p.id === pipelineId ? "bg-indigo-600 text-white" : "bg-surface text-slate-600 border border-slate-200"}`}>{p.name}</Link>
           ))}
         </div>
       </div>

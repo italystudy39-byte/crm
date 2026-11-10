@@ -46,7 +46,7 @@ export function Kanban({ slug, stages, deals, currency, canEdit }: { slug: strin
                   key={d.id}
                   draggable={canEdit}
                   onDragStart={(e) => e.dataTransfer.setData("text/plain", d.id)}
-                  className="cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-sm active:cursor-grabbing"
+                  className="cursor-grab rounded-lg border border-slate-200 bg-surface p-3 shadow-sm active:cursor-grabbing"
                 >
                   <Link href={`/o/${slug}/deals/${d.id}`} className="font-medium hover:text-indigo-600">{d.title}</Link>
                   <div className="text-sm text-slate-600">{fmt.format(Number(d.amount))}</div>

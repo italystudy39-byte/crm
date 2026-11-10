@@ -21,7 +21,7 @@ export function RevenueChart({ points, currency, bucket }: { points: Point[]; cu
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Выигранные сделки по ${bucket === "day" ? "дням" : "неделям"}`}>
       {ticks.map((t) => (
         <g key={t}>
-          <line x1={padL} x2={W} y1={y(t)} y2={y(t)} stroke="#e2e8f0" strokeDasharray={t === 0 ? undefined : "3 3"} />
+          <line x1={padL} x2={W} y1={y(t)} y2={y(t)} className="stroke-slate-200" strokeDasharray={t === 0 ? undefined : "3 3"} />
           <text x={padL - 6} y={y(t) + 4} textAnchor="end" className="fill-slate-400 text-[11px]">{compact.format(t)}</text>
         </g>
       ))}
