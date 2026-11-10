@@ -2,8 +2,9 @@ import { requireOrg, type FieldDef } from "@/lib/org";
 import { CustomFieldInputs } from "@/components/CustomFields";
 import { saveCompany, deleteCompany } from "../actions";
 
-export default async function CompaniesPage({ params }: PageProps<"/o/[slug]/companies">) {
+export default async function CompaniesPage({ params, searchParams }: PageProps<"/o/[slug]/companies">) {
   const { slug } = await params;
+  const sp = await searchParams;
   const { supabase, org, canEdit } = await requireOrg(slug);
   const [{ data: companies }, { data: defs }, { data: counts }] = await Promise.all([
     supabase.from("companies").select("id, name, website, phone").eq("organization_id", org.id).order("name"),
@@ -17,7 +18,7 @@ export default async function CompaniesPage({ params }: PageProps<"/o/[slug]/com
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Компании</h1>
       {canEdit && (
-        <details className="card">
+        <details className="card" open={sp.new === "1"}>
           <summary className="cursor-pointer text-sm font-medium text-indigo-600">+ Новая компания</summary>
           <form action={saveCompany} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <input type="hidden" name="slug" value={slug} />
@@ -34,7 +35,7 @@ export default async function CompaniesPage({ params }: PageProps<"/o/[slug]/com
           <thead><tr><th className="th">Название</th><th className="th">Сайт</th><th className="th">Телефон</th><th className="th">Контактов</th><th className="th" /></tr></thead>
           <tbody>
             {(companies ?? []).map((c) => (
-              <tr key={c.id}>
+              <tr key={c.id} id={c.id} className="target:bg-indigo-50">
                 <td className="td font-medium">{c.name}</td>
                 <td className="td">{c.website}</td>
                 <td className="td">{c.phone}</td>

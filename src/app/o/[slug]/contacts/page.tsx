@@ -32,7 +32,7 @@ export default async function ContactsPage({ params, searchParams }: PageProps<"
         <button className="btn-ghost">Найти</button>
       </form>
       {canEdit && (
-        <details className="card">
+        <details className="card" open={sp.new === "1"}>
           <summary className="cursor-pointer text-sm font-medium text-indigo-600">+ Новый контакт</summary>
           <form action={saveContact} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <input type="hidden" name="slug" value={slug} />

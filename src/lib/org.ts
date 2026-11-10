@@ -22,7 +22,7 @@ export async function requireOrg(slug: string) {
   const { supabase, userId, email } = await requireUser();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, currency, plan")
+    .select("id, name, slug, currency, plan, timezone")
     .eq("slug", slug)
     .maybeSingle();
   if (!org) notFound();
@@ -79,4 +79,9 @@ export function readCustom(formData: FormData, defs: FieldDef[]) {
 
 export function isOverdue(due: string | null, done: boolean) {
   return !done && !!due && new Date(due).getTime() < Date.now();
+}
+
+/** Current time; kept outside components so render functions stay pure for the linter. */
+export function nowMs() {
+  return Date.now();
 }

@@ -35,7 +35,7 @@ export default async function DealsPage({ params, searchParams }: PageProps<"/o/
       </div>
 
       {canEdit && (stages ?? []).length > 0 && (
-        <details className="card">
+        <details className="card" open={sp.new === "1"}>
           <summary className="cursor-pointer text-sm font-medium text-indigo-600">+ Новая сделка</summary>
           <form action={saveDeal} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <input type="hidden" name="slug" value={slug} />

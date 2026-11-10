@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { requireOrg, ROLE_LABELS, type Role } from "@/lib/org";
+import { TIMEZONES } from "@/lib/period";
 import {
   updateOrg, inviteMember, revokeInvite, changeRole, removeMember,
   saveStage, deleteStage, addPipeline, addField, deleteField,
@@ -44,6 +45,11 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             <div><label className="label">Валюта</label>
               <select name="currency" defaultValue={org.currency} className="input">
                 {["RUB", "USD", "EUR", "KZT", "UAH", "BYN", "UZS", "AMD", "GEL"].map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Часовой пояс</label>
+              <select name="timezone" defaultValue={org.timezone} className="input">
+                {(TIMEZONES.includes(org.timezone) ? TIMEZONES : [org.timezone, ...TIMEZONES]).map((z) => <option key={z}>{z}</option>)}
               </select>
             </div>
             {isAdmin && <button className="btn">Сохранить</button>}

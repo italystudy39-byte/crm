@@ -44,6 +44,10 @@ export async function saveContact(f: FormData) {
   } else {
     const { data, error } = await c.supabase.from("contacts").insert({ ...row, owner_id: c.userId }).select("id").single();
     if (error) fail(error.message);
+    await c.supabase.from("activities").insert({
+      organization_id: c.org.id, contact_id: data.id, type: "contact_created", author_id: c.userId,
+      body: `${row.first_name} ${row.last_name ?? ""}`.trim(),
+    });
     redirect(`/o/${c.slug}/contacts/${data.id}`);
   }
 }
@@ -126,6 +130,9 @@ export async function saveDeal(f: FormData) {
   } else {
     const { data, error } = await c.supabase.from("deals").insert(row).select("id").single();
     if (error) fail(error.message);
+    await c.supabase.from("activities").insert({
+      organization_id: c.org.id, deal_id: data.id, type: "deal_created", author_id: c.userId, body: row.title,
+    });
     redirect(`/o/${c.slug}/deals/${data.id}`);
   }
 }
@@ -188,7 +195,13 @@ export async function addTask(f: FormData) {
 
 export async function toggleTask(f: FormData) {
   const c = await ctx(f);
-  await c.supabase.from("tasks").update({ done: f.get("done") === "true" }).eq("id", String(f.get("id")));
+  const done = f.get("done") === "true";
+  const { data: t } = await c.supabase.from("tasks").update({ done }).eq("id", String(f.get("id"))).select("title, deal_id, contact_id").single();
+  if (done && t) {
+    await c.supabase.from("activities").insert({
+      organization_id: c.org.id, type: "task_done", body: t.title, deal_id: t.deal_id, contact_id: t.contact_id, author_id: c.userId,
+    });
+  }
   revalidatePath(String(f.get("path") ?? `/o/${c.slug}/tasks`));
 }
 
@@ -200,7 +213,11 @@ function requireAdmin(c: { isAdmin: boolean }) {
 export async function updateOrg(f: FormData) {
   const c = await ctx(f);
   requireAdmin(c);
-  await c.supabase.from("organizations").update({ name: s(f, "name") ?? c.org.name, currency: s(f, "currency") ?? c.org.currency }).eq("id", c.org.id);
+  await c.supabase.from("organizations").update({
+    name: s(f, "name") ?? c.org.name,
+    currency: s(f, "currency") ?? c.org.currency,
+    timezone: s(f, "timezone") ?? c.org.timezone,
+  }).eq("id", c.org.id);
   revalidatePath(`/o/${c.slug}`, "layout");
 }
 

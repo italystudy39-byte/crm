@@ -1,15 +1,30 @@
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
-import { requireOrg } from "@/lib/org";
+import { requireOrg, nowMs } from "@/lib/org";
+import { Topbar } from "@/components/Topbar";
+import { localYmd, zonedMidnight } from "@/lib/period";
 import { signOut } from "@/app/login/actions";
 
 export default async function OrgLayout({ children, params }: LayoutProps<"/o/[slug]">) {
   const { slug } = await params;
-  const { org, email, supabase, userId } = await requireOrg(slug);
+  const { org, email, supabase, userId, canEdit } = await requireOrg(slug);
   const { data: orgs } = await supabase
     .from("memberships")
     .select("organizations(name, slug)")
     .eq("user_id", userId);
+  const now = new Date(nowMs());
+  const t = localYmd(org.timezone, now);
+  const endOfToday = zonedMidnight(org.timezone, t.y, t.m, t.d + 1);
+  const { data: due } = await supabase
+    .from("tasks")
+    .select("id, title, due_at, deal_id, contact_id")
+    .eq("organization_id", org.id)
+    .eq("assignee_id", userId)
+    .eq("done", false)
+    .lt("due_at", endOfToday.toISOString())
+    .order("due_at")
+    .limit(20);
+  const notifications = (due ?? []).map((n) => ({ ...n, overdue: new Date(n.due_at!).getTime() < now.getTime() }));
   const list = (orgs ?? []).map((o) => o.organizations as unknown as { name: string; slug: string });
 
   return (
@@ -33,7 +48,10 @@ export default async function OrgLayout({ children, params }: LayoutProps<"/o/[s
           <form action={signOut}><button className="w-full rounded px-2 py-1 text-left text-sm text-slate-500 hover:bg-slate-100">Выйти</button></form>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Topbar slug={slug} canEdit={canEdit} notifications={notifications} />
+        <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+      </div>
     </div>
   );
 }

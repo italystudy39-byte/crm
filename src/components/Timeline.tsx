@@ -1,7 +1,7 @@
 import { addActivity, addTask, toggleTask } from "@/app/o/[slug]/actions";
 import { formatDate, isOverdue } from "@/lib/org";
 
-const TYPE_LABEL: Record<string, string> = { note: "Заметка", call: "Звонок", meeting: "Встреча", email: "Письмо", stage_change: "Смена этапа" };
+const TYPE_LABEL: Record<string, string> = { note: "Заметка", call: "Звонок", meeting: "Встреча", email: "Письмо", stage_change: "Смена этапа", deal_created: "Создана сделка", contact_created: "Добавлен контакт", task_done: "Задача выполнена" };
 
 type Activity = { id: string; type: string; body: string | null; created_at: string; profiles: { full_name: string | null } | null };
 type Task = { id: string; title: string; due_at: string | null; done: boolean };
