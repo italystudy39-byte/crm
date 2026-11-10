@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { ApiError, GoogleGenAI, ThinkingLevel, type Content, type Part } from "@google/genai";
 import { TOOLS, TOOL_LABELS, runTool, type AgentCtx } from "./tools";
 
@@ -13,8 +14,9 @@ export type RunArgs = {
 
 const MAX_STEPS = 6;
 
-/** Which AI provider is configured. Claude wins when both keys are set. */
-export function activeProvider(): "gemini" | "claude" | null {
+/** Which AI provider is configured: Groq, then Claude, then Gemini. */
+export function activeProvider(): "groq" | "gemini" | "claude" | null {
+  if (process.env.GROQ_API_KEY) return "groq";
   if (process.env.ANTHROPIC_API_KEY) return "claude";
   if (process.env.GEMINI_API_KEY) return "gemini";
   return null;
@@ -181,5 +183,120 @@ export function claudeErrorMessage(e: unknown) {
   if (e instanceof Anthropic.RateLimitError) return "Слишком много запросов, попробуйте через минуту.";
   if (e instanceof Anthropic.AuthenticationError) return "Неверный ключ ANTHROPIC_API_KEY.";
   if (e instanceof Anthropic.APIError) return "AI-сервис временно недоступен, попробуйте ещё раз.";
+  return null;
+}
+
+// ---------------- Groq (OpenAI-compatible) ----------------
+const GROQ_MODELS = [process.env.GROQ_MODEL, "openai/gpt-oss-120b", "llama-3.3-70b-versatile"].filter(
+  (m, i, a): m is string => !!m && a.indexOf(m) === i,
+);
+
+/** If none of our preferred models exist any more, pick a tool-capable one from the live list. */
+async function discoverGroqModel(client: OpenAI) {
+  const ids: string[] = [];
+  for await (const m of client.models.list()) ids.push(m.id);
+  console.info("groq models available", ids.join(", "));
+  const prefs = [/gpt-oss-120b/, /llama.*70b/, /qwen/, /gpt-oss/, /llama/];
+  for (const re of prefs) {
+    const hit = ids.find((id) => re.test(id) && !/guard|whisper|tts|vision/.test(id));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export async function runGroq({ system, messages, ctx, send, signal }: RunArgs) {
+  const client = new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1", maxRetries: 1, timeout: 60_000 });
+  const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = TOOLS.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
+  }));
+  const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: system },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+  const models = [...GROQ_MODELS];
+  let modelIdx = 0;
+
+  for (let step = 0; step < MAX_STEPS; step++) {
+    let text = "";
+    const calls: { id: string; name: string; args: string }[] = [];
+    let finish: string | null = null;
+    for (;;) {
+      const model = models[modelIdx];
+      let streamed = false;
+      try {
+        const stream = await client.chat.completions.create(
+          { model, messages: history, tools, tool_choice: "auto", stream: true, temperature: 0.3, max_completion_tokens: 4000 },
+          { signal },
+        );
+        for await (const chunk of stream) {
+          const ch = chunk.choices[0];
+          if (!ch) continue;
+          if (ch.finish_reason) finish = ch.finish_reason;
+          if (ch.delta?.content) {
+            streamed = true;
+            text += ch.delta.content;
+            send({ type: "text", text: ch.delta.content });
+          }
+          for (const tc of ch.delta?.tool_calls ?? []) {
+            const c = (calls[tc.index] ??= { id: "", name: "", args: "" });
+            if (tc.id) c.id = tc.id;
+            if (tc.function?.name) c.name += tc.function.name;
+            if (tc.function?.arguments) c.args += tc.function.arguments;
+          }
+        }
+        break;
+      } catch (e) {
+        const status = e instanceof OpenAI.APIError ? e.status : undefined;
+        console.warn("groq attempt failed", model, status, (e as Error).message.slice(0, 300));
+        if (signal.aborted || streamed) throw e;
+        if (status === 404 || (status === 400 && /model/i.test((e as Error).message))) {
+          if (modelIdx < models.length - 1) {
+            modelIdx++;
+            continue;
+          }
+          const found = await discoverGroqModel(client).catch(() => null);
+          if (found && !models.includes(found)) {
+            models.push(found);
+            modelIdx = models.length - 1;
+            continue;
+          }
+        }
+        throw e;
+      }
+    }
+    const toolCalls = calls.filter(Boolean);
+    if (!toolCalls.length) return;
+    if (finish === "length") {
+      send({ type: "text", text: "\n\nОтвет получился слишком длинным, попробуйте уточнить вопрос." });
+      return;
+    }
+
+    history.push({
+      role: "assistant",
+      content: text || null,
+      tool_calls: toolCalls.map((c) => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: c.args || "{}" } })),
+    });
+    for (const c of toolCalls) {
+      let input: unknown;
+      try {
+        input = c.args ? JSON.parse(c.args) : {};
+      } catch {
+        history.push({ role: "tool", tool_call_id: c.id, content: "Ошибка: аргументы не являются корректным JSON" });
+        continue;
+      }
+      const r = await execTool(c.name, input, ctx, send);
+      history.push({ role: "tool", tool_call_id: c.id, content: r.isError ? `Ошибка: ${r.content}` : r.content });
+    }
+    send({ type: "break" });
+  }
+}
+
+export function groqErrorMessage(e: unknown) {
+  if (e instanceof OpenAI.APIError) {
+    if (e.status === 429) return "Превышен бесплатный лимит Groq, попробуйте через минуту.";
+    if (e.status === 401 || e.status === 403) return "Проблема с ключом GROQ_API_KEY.";
+    return "AI-сервис временно недоступен, попробуйте ещё раз.";
+  }
   return null;
 }

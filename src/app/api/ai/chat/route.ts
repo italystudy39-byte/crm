@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { formatMoney, formatDate } from "@/lib/org";
 import { todayLine, type AgentCtx } from "@/lib/ai/tools";
-import { activeProvider, runClaude, runGemini, claudeErrorMessage, geminiErrorMessage } from "@/lib/ai/providers";
+import { activeProvider, runClaude, runGemini, runGroq, claudeErrorMessage, geminiErrorMessage, groqErrorMessage } from "@/lib/ai/providers";
 
 export const maxDuration = 120;
 
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 
   const provider = activeProvider();
   if (!provider) {
-    return Response.json({ error: "AI-ассистент ещё не подключён: администратору нужно добавить ключ GEMINI_API_KEY." }, { status: 503 });
+    return Response.json({ error: "AI-ассистент ещё не подключён: администратору нужно добавить ключ GROQ_API_KEY." }, { status: 503 });
   }
 
   const ctx: AgentCtx = { supabase, userId, org, canEdit: m.role !== "viewer", transcript: messages };
@@ -104,13 +104,13 @@ export async function POST(req: Request) {
         }
       };
       try {
-        const run = provider === "gemini" ? runGemini : runClaude;
+        const run = provider === "groq" ? runGroq : provider === "gemini" ? runGemini : runClaude;
         await run({ system, messages, ctx, send, signal: req.signal });
         send({ type: "done" });
       } catch (e) {
         if (!req.signal.aborted) {
           console.error("ai chat failed", provider, e);
-          send({ type: "error", message: geminiErrorMessage(e) ?? claudeErrorMessage(e) ?? "Что-то пошло не так." });
+          send({ type: "error", message: groqErrorMessage(e) ?? geminiErrorMessage(e) ?? claudeErrorMessage(e) ?? "Что-то пошло не так." });
         }
       } finally {
         try {
