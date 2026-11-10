@@ -309,3 +309,18 @@ export async function deleteField(f: FormData) {
   await c.supabase.from("custom_field_defs").delete().eq("id", String(f.get("id")));
   revalidatePath(`/o/${c.slug}/settings`);
 }
+
+// ---------- support ----------
+export async function updateTicket(f: FormData) {
+  const c = await ctx(f);
+  requireAdmin(c);
+  const status = String(f.get("status"));
+  if (!["open", "in_progress", "resolved"].includes(status)) fail("Неверный статус");
+  const { error } = await c.supabase
+    .from("support_tickets")
+    .update({ status, resolution: s(f, "resolution"), updated_at: new Date().toISOString() })
+    .eq("id", String(f.get("id")))
+    .eq("organization_id", c.org.id);
+  if (error) fail(error.message);
+  revalidatePath(`/o/${c.slug}/support`);
+}

@@ -13,6 +13,7 @@ export function Nav({ slug }: { slug: string }) {
     { href: `${base}/companies`, label: "Компании" },
     { href: `${base}/tasks`, label: "Задачи" },
     { href: `${base}/settings`, label: "Настройки" },
+    { href: `${base}/support`, label: "Поддержка" },
   ];
   return (
     <nav className="flex gap-1 overflow-x-auto md:flex-col">

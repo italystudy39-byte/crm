@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { requireOrg, nowMs } from "@/lib/org";
 import { Topbar } from "@/components/Topbar";
+import { AiChat } from "@/components/AiChat";
 import { localYmd, zonedMidnight } from "@/lib/period";
 import { signOut } from "@/app/login/actions";
 
@@ -62,8 +63,9 @@ export default async function OrgLayout({ children, params }: LayoutProps<"/o/[s
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar slug={slug} canEdit={canEdit} notifications={notifications} />
-        <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 pb-24 md:p-6 md:pb-24">{children}</main>
       </div>
+      <AiChat slug={slug} />
     </div>
   );
 }

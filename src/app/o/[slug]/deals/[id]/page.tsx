@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireOrg, formatMoney, type FieldDef } from "@/lib/org";
 import { CustomFieldInputs } from "@/components/CustomFields";
 import { Timeline } from "@/components/Timeline";
+import { DealAiButtons } from "@/components/AskAiButtons";
 import { saveDeal, deleteDeal } from "../../actions";
 
 export default async function DealPage({ params }: PageProps<"/o/[slug]/deals/[id]">) {
@@ -32,6 +33,7 @@ export default async function DealPage({ params }: PageProps<"/o/[slug]/deals/[i
         <h1 className="text-2xl font-semibold">{deal.title}</h1>
         <div className="text-xl">{formatMoney(deal.amount, org.currency)}</div>
       </div>
+      <DealAiButtons dealId={id} dealTitle={deal.title} />
       <div className="grid gap-4 lg:grid-cols-2">
         <form action={saveDeal} className="card grid gap-3 sm:grid-cols-2">
           <input type="hidden" name="slug" value={slug} />
