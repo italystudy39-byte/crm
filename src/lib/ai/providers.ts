@@ -28,27 +28,59 @@ async function execTool(name: string, input: unknown, ctx: AgentCtx, send: Send)
 }
 
 // ---------------- Gemini ----------------
+const GEMINI_MODELS = [
+  process.env.GEMINI_MODEL,
+  "gemini-3.8-flash",
+  "gemini-flash-latest",
+  "gemini-flash-lite-latest",
+  "gemini-2.5-flash",
+].filter((m, i, a): m is string => !!m && a.indexOf(m) === i);
+
+// Overloaded / rate-limited / unknown model: try the next model in the chain.
+const retryable = (e: unknown) =>
+  e instanceof ApiError && [404, 429, 500, 503].includes(e.status);
+
 export async function runGemini({ system, messages, ctx, send, signal }: RunArgs) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { retryOptions: { attempts: 1 } } });
   const contents: Content[] = messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
   const functionDeclarations = TOOLS.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.input_schema }));
+  let modelIdx = 0;
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const stream = await ai.models.generateContentStream({
-      model,
-      contents,
-      config: { systemInstruction: system, tools: [{ functionDeclarations }], abortSignal: signal },
-    });
-    // Keep every part the model returned (incl. thought signatures) to send back as history.
     const modelParts: Part[] = [];
     let finish: string | undefined;
-    for await (const chunk of stream) {
-      const cand = chunk.candidates?.[0];
-      if (cand?.finishReason) finish = cand.finishReason;
-      for (const p of cand?.content?.parts ?? []) {
-        modelParts.push(p);
-        if (p.text && !p.thought) send({ type: "text", text: p.text });
+    for (;;) {
+      const model = GEMINI_MODELS[modelIdx];
+      let streamed = false;
+      try {
+        const stream = await ai.models.generateContentStream({
+          model,
+          contents,
+          config: {
+            systemInstruction: system,
+            tools: [{ functionDeclarations }],
+            abortSignal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+          },
+        });
+        // Keep every part the model returned (incl. thought signatures) to send back as history.
+        for await (const chunk of stream) {
+          const cand = chunk.candidates?.[0];
+          if (cand?.finishReason) finish = cand.finishReason;
+          for (const p of cand?.content?.parts ?? []) {
+            modelParts.push(p);
+            if (p.text && !p.thought) {
+              streamed = true;
+              send({ type: "text", text: p.text });
+            }
+          }
+        }
+        break;
+      } catch (e) {
+        if (signal.aborted || streamed || !retryable(e) || modelIdx >= GEMINI_MODELS.length - 1) throw e;
+        console.warn("gemini model failed, trying next", model, e instanceof ApiError ? e.status : (e as Error).name);
+        modelIdx++;
+        modelParts.length = 0;
+        finish = undefined;
       }
     }
     const calls = modelParts.filter((p) => p.functionCall).map((p) => p.functionCall!);
@@ -72,10 +104,12 @@ export async function runGemini({ system, messages, ctx, send, signal }: RunArgs
 
 export function geminiErrorMessage(e: unknown) {
   if (e instanceof ApiError) {
-    if (e.status === 429) return "Превышен лимит запросов к Gemini, попробуйте через минуту.";
+    if (e.status === 429) return "Превышен лимит бесплатных запросов к Gemini, попробуйте через минуту.";
+    if (e.status === 503) return "Gemini сейчас перегружен, попробуйте через минуту.";
     if (e.status === 400 || e.status === 401 || e.status === 403) return "Проблема с ключом GEMINI_API_KEY или моделью.";
     return "AI-сервис временно недоступен, попробуйте ещё раз.";
   }
+  if (e instanceof Error && e.name === "TimeoutError") return "Gemini долго не отвечает, попробуйте ещё раз.";
   return null;
 }
 
