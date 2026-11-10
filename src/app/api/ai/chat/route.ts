@@ -1,13 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { formatMoney, formatDate } from "@/lib/org";
-import { TOOLS, TOOL_LABELS, runTool, todayLine, type AgentCtx } from "@/lib/ai/tools";
+import { todayLine, type AgentCtx } from "@/lib/ai/tools";
+import { activeProvider, runClaude, runGemini, claudeErrorMessage, geminiErrorMessage } from "@/lib/ai/providers";
 
 export const maxDuration = 120;
 
-const MODEL = "claude-opus-5-5";
-const MAX_STEPS = 6;
 
 const Body = z.object({
   slug: z.string().min(1).max(100),
@@ -82,8 +80,9 @@ export async function POST(req: Request) {
   const { data: m } = await supabase.from("memberships").select("role").eq("organization_id", org.id).eq("user_id", userId).maybeSingle();
   if (!m) return Response.json({ error: "Нет доступа" }, { status: 403 });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return Response.json({ error: "AI-ассистент ещё не подключён: администратору нужно добавить ключ ANTHROPIC_API_KEY." }, { status: 503 });
+  const provider = activeProvider();
+  if (!provider) {
+    return Response.json({ error: "AI-ассистент ещё не подключён: администратору нужно добавить ключ GEMINI_API_KEY." }, { status: 503 });
   }
 
   const ctx: AgentCtx = { supabase, userId, org, canEdit: m.role !== "viewer", transcript: messages };
@@ -93,8 +92,6 @@ export async function POST(req: Request) {
     if (dc) system += `\n\nТекущая сделка (пользователь открыл её карточку):\n<deal>\n${dc}\n</deal>`;
   }
 
-  const client = new Anthropic();
-  const history: Anthropic.Beta.BetaMessageParam[] = messages.map((x) => ({ role: x.role, content: x.content }));
   const enc = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -107,55 +104,13 @@ export async function POST(req: Request) {
         }
       };
       try {
-        for (let step = 0; step < MAX_STEPS; step++) {
-          const s = client.beta.messages.stream(
-            {
-              model: MODEL,
-              max_tokens: 8000,
-              system,
-              messages: history,
-              tools: TOOLS,
-              output_config: { effort: "low" },
-              fallbacks: "default",
-              betas: ["server-side-fallback-2026-07-01"],
-            },
-            { signal: req.signal },
-          );
-          s.on("text", (t) => send({ type: "text", text: t }));
-          const msg = await s.finalMessage();
-
-          if (msg.stop_reason === "refusal") {
-            send({ type: "text", text: "\n\nНе могу помочь с этим запросом." });
-            break;
-          }
-          const toolUses = msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-          if (msg.stop_reason === "max_tokens" && toolUses.length) {
-            send({ type: "text", text: "\n\nОтвет получился слишком длинным, попробуйте уточнить вопрос." });
-            break;
-          }
-          if (msg.stop_reason !== "tool_use" || !toolUses.length) break;
-
-          history.push({ role: "assistant", content: msg.content });
-          const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
-          for (const tu of toolUses) {
-            send({ type: "tool", name: tu.name, label: TOOL_LABELS[tu.name] ?? tu.name });
-            const r = await runTool(tu.name, tu.input, ctx);
-            if (r.event) send(r.event);
-            results.push({ type: "tool_result", tool_use_id: tu.id, content: r.content, ...(r.isError ? { is_error: true } : {}) });
-          }
-          history.push({ role: "user", content: results });
-          send({ type: "break" });
-        }
+        const run = provider === "gemini" ? runGemini : runClaude;
+        await run({ system, messages, ctx, send, signal: req.signal });
         send({ type: "done" });
       } catch (e) {
         if (!req.signal.aborted) {
-          console.error("ai chat failed", e);
-          const message =
-            e instanceof Anthropic.RateLimitError ? "Слишком много запросов, попробуйте через минуту."
-            : e instanceof Anthropic.AuthenticationError ? "Неверный ключ ANTHROPIC_API_KEY."
-            : e instanceof Anthropic.APIError ? "AI-сервис временно недоступен, попробуйте ещё раз."
-            : "Что-то пошло не так.";
-          send({ type: "error", message });
+          console.error("ai chat failed", provider, e);
+          send({ type: "error", message: geminiErrorMessage(e) ?? claudeErrorMessage(e) ?? "Что-то пошло не так." });
         }
       } finally {
         try {
